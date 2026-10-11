@@ -1,6 +1,6 @@
 .venv/
 __pycache__/
 *.pyc
-results/*.csv
 .env
 certs/
+state/*.tmp

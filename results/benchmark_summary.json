@@ -1,0 +1,40 @@
+{
+  "plain": {
+    "mode": "plain_coap_udp",
+    "requests": 30,
+    "successes": 30,
+    "duration_seconds": 0.0129,
+    "throughput_rps": 2329.17,
+    "mean_latency_ms": 0.422,
+    "median_latency_ms": 0.301,
+    "p95_latency_ms": 0.606,
+    "min_latency_ms": 0.231,
+    "max_latency_ms": 2.432,
+    "std_latency_ms": 0.434,
+    "mean_handshake_ms": 0.0,
+    "avg_wire_sent_bytes": 20.0,
+    "avg_wire_recv_bytes": 180.8,
+    "cpu_seconds": 0.0,
+    "memory_mb": 76.9,
+    "cipher": "None (Plaintext)"
+  },
+  "dtls": {
+    "mode": "secure_coap_dtls",
+    "requests": 30,
+    "successes": 30,
+    "duration_seconds": 0.5935,
+    "throughput_rps": 50.55,
+    "mean_latency_ms": 19.605,
+    "median_latency_ms": 18.341,
+    "p95_latency_ms": 24.373,
+    "min_latency_ms": 17.64,
+    "max_latency_ms": 29.446,
+    "std_latency_ms": 3.167,
+    "mean_handshake_ms": 13.024,
+    "avg_wire_sent_bytes": 20.0,
+    "avg_wire_recv_bytes": 152.9,
+    "cpu_seconds": 0.046875,
+    "memory_mb": 78.16,
+    "cipher": "ECDHE-RSA-AES256-GCM-SHA384"
+  }
+}
