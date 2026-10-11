@@ -1,0 +1,5 @@
+aiocoap==0.4.12
+streamlit>=1.38
+pandas>=2.2
+matplotlib>=3.8
+psutil>=6.0
