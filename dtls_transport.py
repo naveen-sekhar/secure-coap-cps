@@ -337,15 +337,14 @@ class DTLSServer:
                     if resp_coap.token is None:
                         resp_coap.token = req_coap.token
                     ssl_conn.send(resp_coap.encode())
+                    time.sleep(0.02)
 
         except OpenSSL.SSL.Error as e:
             with self._lock:
                 self.failed_handshakes += 1
-            import traceback
-            log.warning("DTLS handshake rejected from %s: %s\n%s", client_addr, e.args, traceback.format_exc())
+            log.warning("DTLS handshake rejected from %s (peer certificate untrusted or invalid)", client_addr)
         except Exception as e:
-            import traceback
-            log.error("Error processing DTLS session from %s: %s\n%s", client_addr, e, traceback.format_exc())
+            log.error("Error processing DTLS session from %s: %s", client_addr, e)
         finally:
             session_active = False
             with self._lock:

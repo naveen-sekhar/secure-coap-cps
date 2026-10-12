@@ -1,8 +1,8 @@
 """End-to-end integration and security test suite for Secure CoAP CPS.
 
 Verifies:
-- Plain CoAP communication
-- Genuine DTLS CoAP communication
+- Plain CoAP communication (Port 5683)
+- Genuine DTLS CoAP communication (Port 5684)
 - Sensor telemetry submission
 - Controller actuator operation
 - RBAC enforcement (Privilege Escalation defense)
@@ -14,6 +14,7 @@ Verifies:
 
 import json
 import os
+import socket
 import threading
 import time
 import unittest
@@ -21,8 +22,17 @@ import asyncio
 from aiocoap import Context, Message, GET, POST, CONTENT, CHANGED, FORBIDDEN, BAD_REQUEST
 from crypto_utils import CERTS_DIR, ensure_credentials
 from dtls_transport import DTLSClient, DTLSServer
-from server import dtls_server_handler, run_plain_coap_server, STATE
+from server import dtls_server_handler, run_plain_coap_server
 from security import get_recent_security_events, load_replay_state, save_replay_state
+
+def _is_udp_port_in_use(port: int) -> bool:
+    """Checks if a UDP port is already bound by an existing server process."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        try:
+            s.bind(("127.0.0.1", port))
+            return False
+        except OSError:
+            return True
 
 class SecureCoAPIntegrationTests(unittest.TestCase):
     @classmethod
@@ -41,34 +51,39 @@ class SecureCoAPIntegrationTests(unittest.TestCase):
 
         cls.plain_port = 5683
         cls.dtls_port = 5684
+        cls.spawned_servers = False
 
-        # Start DTLS Server
-        cls.dtls_server = DTLSServer(
-            host="127.0.0.1",
-            port=cls.dtls_port,
-            cert_path=cls.gw_crt,
-            key_path=cls.gw_key,
-            ca_path=cls.ca_crt,
-            handler_fn=dtls_server_handler
-        )
-        cls.dtls_server.start()
+        # Only start in-process servers if not already running in an external terminal
+        if not _is_udp_port_in_use(cls.dtls_port) and not _is_udp_port_in_use(cls.plain_port):
+            cls.spawned_servers = True
+            cls.dtls_server = DTLSServer(
+                host="127.0.0.1",
+                port=cls.dtls_port,
+                cert_path=cls.gw_crt,
+                key_path=cls.gw_key,
+                ca_path=cls.ca_crt,
+                handler_fn=dtls_server_handler
+            )
+            cls.dtls_server.start()
 
-        # Start Plain CoAP Server in a dedicated event loop thread
-        cls.plain_loop = asyncio.new_event_loop()
-        cls.plain_ready = threading.Event()
-        def plain_runner():
-            asyncio.set_event_loop(cls.plain_loop)
-            cls.plain_loop.create_task(run_plain_coap_server("127.0.0.1", cls.plain_port, ready_event=cls.plain_ready))
-            cls.plain_loop.run_forever()
+            cls.plain_loop = asyncio.new_event_loop()
+            cls.plain_ready = threading.Event()
+            def plain_runner():
+                asyncio.set_event_loop(cls.plain_loop)
+                cls.plain_loop.create_task(run_plain_coap_server("127.0.0.1", cls.plain_port, ready_event=cls.plain_ready))
+                cls.plain_loop.run_forever()
 
-        cls.plain_thread = threading.Thread(target=plain_runner, daemon=True)
-        cls.plain_thread.start()
-        cls.plain_ready.wait(timeout=5.0)
+            cls.plain_thread = threading.Thread(target=plain_runner, daemon=True)
+            cls.plain_thread.start()
+            cls.plain_ready.wait(timeout=5.0)
+        else:
+            time.sleep(0.1)
 
     @classmethod
     def tearDownClass(cls):
-        cls.dtls_server.stop()
-        cls.plain_loop.call_soon_threadsafe(cls.plain_loop.stop)
+        if cls.spawned_servers:
+            cls.dtls_server.stop()
+            cls.plain_loop.call_soon_threadsafe(cls.plain_loop.stop)
 
     # 1. Plain CoAP Baseline
     def test_01_plain_coap_get_moisture(self):
@@ -105,8 +120,9 @@ class SecureCoAPIntegrationTests(unittest.TestCase):
         resp, stats = client.send_coap_request("127.0.0.1", self.dtls_port, msg)
         self.assertIsNotNone(resp)
         self.assertEqual(resp.code, CHANGED)
-        self.assertEqual(STATE["soil_moisture"], 32.1)
-        self.assertEqual(STATE["temperature"], 27.8)
+        body = json.loads(resp.payload.decode())
+        self.assertEqual(body["soil_moisture"], 32.1)
+        self.assertEqual(body["temperature"], 27.8)
 
     # 4. Controller Operating Pump Actuator
     def test_04_controller_operates_pump(self):
@@ -117,7 +133,8 @@ class SecureCoAPIntegrationTests(unittest.TestCase):
         resp, stats = client.send_coap_request("127.0.0.1", self.dtls_port, msg)
         self.assertIsNotNone(resp)
         self.assertEqual(resp.code, CHANGED)
-        self.assertTrue(STATE["pump_on"])
+        body = json.loads(resp.payload.decode())
+        self.assertTrue(body["pump_on"])
 
     # 5. Application-level Replay Protection
     def test_05_application_replay_attack_rejected(self):
