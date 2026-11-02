@@ -55,6 +55,33 @@ secure-coap-cps/
     └── benchmark_comparison.csv # Real measured benchmark data
 ```
 
+### Module Map: Where Each Feature Lives
+
+Use this map when reading the code. **Code location** gives the current source
+line followed by a stable Python symbol or labelled comment section; use the
+symbol when later edits move a line.
+
+| Feature / module | File | Code location | What it does |
+|---|---|---|---|
+| Certificate authentication setup | `crypto_utils.py` | line 17; `Certificate-generation module` | Creates the lab CA, gateway, sensor, controller, and rogue credentials. |
+| DTLS server authentication | `dtls_transport.py` | line 31; `create_dtls_server_context` | Loads the gateway certificate, requires a client certificate, validates it against the CA, and limits cipher suites. |
+| DTLS client authentication | `dtls_transport.py` | lines 49, 127; `create_dtls_client_context`, `DTLSClient.send_coap_request` | Loads a device certificate, verifies the server, performs the handshake, and sends an encrypted CoAP message. |
+| Authenticated identity binding | `dtls_transport.py` | lines 67, 308; `extract_peer_identity`, `DTLSServer._run_session_worker` | Reads the peer certificate CN (for example `sensor-01`) and passes it to the gateway handler. |
+| Authentication / identity map | `security.py` | line 29; `DEVICE_ROLES` | Maps trusted certificate CNs to application roles such as `sensor` and `controller`. |
+| RBAC authorization | `security.py` | lines 37, 97; `ROLE_PERMISSIONS`, `authorized` | Defines which actions each role may perform and records allow/deny audit events. |
+| Replay protection | `security.py` | lines 116-135; `load_replay_state`, `save_replay_state`, `accept_sequence` | Stores each device's largest accepted command sequence and rejects duplicates or stale commands. |
+| Security audit log | `security.py` | lines 46, 52, 73; `log_security_event`, `get_recent_security_events` | Maintains recent in-memory events and appends persistent JSON Lines to `logs/security_events.jsonl`. |
+| Gateway routing | `server.py` | line 48; `process_coap_dispatch` | Routes all CoAP paths and performs authorization, replay checks, payload validation, and state updates. |
+| Telemetry handling | `server.py` | line 89; `/sensor/reading` branch | Lets an authorized sensor upload soil-moisture and temperature values. |
+| Pump-control protection | `server.py` | line 133; `/actuator/pump` branch | Applies RBAC and replay protection before changing the simulated pump state. |
+| Plain CoAP endpoint | `server.py` | lines 196, 213; `PlainResourceAdapter`, `run_plain_coap_server` | Exposes the deliberately insecure UDP baseline on port 5683. |
+| DTLS endpoint | `server.py` | lines 208, 230; `dtls_server_handler`, `start_gateway` | Connects the authenticated DTLS transport to the shared gateway dispatcher on port 5684. |
+| CLI and attack demos | `client.py` | lines 32, 91; `Client transport module`, `main` | Sends normal requests and demonstrates replay, rogue-certificate, and privilege-escalation attacks. |
+| Performance measurement | `benchmark.py` | lines 24, 32, 81; `Performance-measurement module`, benchmark functions | Measures sequential plain and DTLS requests and writes the CSV comparison. |
+| Security unit tests | `tests/test_security.py` | line 4; `SecurityLogicTests` | Tests RBAC decisions and sequence acceptance/rejection. |
+| DTLS tests | `tests/test_dtls.py` | line 14; `DTLSSecurityTests` | Tests trusted handshakes, negotiated cipher properties, and rogue certificate rejection. |
+| End-to-end tests | `tests/test_integration.py` | line 37; `SecureCoAPIntegrationTests` | Tests both endpoints plus telemetry, pump, replay, RBAC, malformed input, and logging. |
+
 ---
 
 ## 🚀 Quick Start Guide

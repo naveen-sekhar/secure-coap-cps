@@ -11,7 +11,9 @@ from typing import Dict, List, Optional, Tuple
 
 log = logging.getLogger("security")
 
-# State & Log directories
+# === Security module: durable audit and replay-protection storage ===
+# These paths are shared by the gateway and tests.  The replay cache survives a
+# gateway restart so an old pump command cannot become valid again after restart.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_DIR = os.path.join(BASE_DIR, "state")
 LOGS_DIR = os.path.join(BASE_DIR, "logs")
@@ -21,7 +23,9 @@ SECURITY_EVENTS_FILE = os.path.join(LOGS_DIR, "security_events.jsonl")
 os.makedirs(STATE_DIR, exist_ok=True)
 os.makedirs(LOGS_DIR, exist_ok=True)
 
-# Authenticated identity -> Role mapping
+# === Authentication identity to authorization role mapping ===
+# `device_id` is the certificate Common Name supplied by the DTLS transport,
+# not a user-controlled request field when a secure endpoint is used.
 DEVICE_ROLES = {
     "sensor-01": "sensor",
     "sensor-02": "sensor",
@@ -30,7 +34,8 @@ DEVICE_ROLES = {
     "rogue-attacker": "attacker"
 }
 
-# Role permissions matrix
+# === RBAC authorization module ===
+# Each gateway operation asks `authorized()` for one of these action names.
 ROLE_PERMISSIONS = {
     "sensor": {"read_sensor", "submit_reading", "device_status"},
     "controller": {"read_sensor", "control_pump", "device_status"},
@@ -38,7 +43,9 @@ ROLE_PERMISSIONS = {
     "attacker": set()
 }
 
-# In-memory recent events ring buffer
+# === Audit logging module ===
+# Keep a small in-process history for fast status/event responses while also
+# appending the complete audit trail as JSON Lines on disk.
 MAX_EVENT_HISTORY = 100
 _EVENT_HISTORY: List[dict] = []
 
@@ -89,6 +96,7 @@ def get_security_metrics() -> dict:
 
 def authorized(device_id: str, action: str) -> bool:
     """Enforces Role-Based Access Control (RBAC)."""
+    # This is the single authorization decision point used by protected routes.
     role = DEVICE_ROLES.get(device_id)
     if not role:
         log_security_event("RBAC_DENIED", device_id, action, "Unknown device identity", False)
@@ -114,6 +122,8 @@ def load_replay_state() -> Dict[str, int]:
 
 def save_replay_state(state: Dict[str, int]):
     """Atomically persists sequence tracking state to disk."""
+    # Write a replacement file first, then rename it, so a process interruption
+    # cannot leave a half-written JSON cache at the destination path.
     try:
         temp_file = REPLAY_CACHE_FILE + ".tmp"
         with open(temp_file, "w", encoding="utf-8") as f:
@@ -126,6 +136,9 @@ def accept_sequence(device_id: str, sequence: int, last_seen: Optional[Dict[str,
     """Accept strictly monotonic sequence numbers; rejects duplicates, stale numbers, or bad types.
     Updates in-memory dictionary and persists atomically.
     """
+    # === Replay-protection module ===
+    # A command is accepted only when its integer sequence is greater than the
+    # most recently accepted sequence for the authenticated device.
     if last_seen is None:
         last_seen = load_replay_state()
         

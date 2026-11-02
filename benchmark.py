@@ -21,6 +21,9 @@ from dtls_transport import DTLSClient
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
+# === Performance-measurement module ===
+# It measures the client process while making sequential requests to a gateway
+# that is already running.  Secure requests include a fresh DTLS handshake.
 ensure_credentials()
 CA_PATH = os.path.join(CERTS_DIR, "ca.crt")
 SENSOR_CRT = os.path.join(CERTS_DIR, "sensor_01.crt")
@@ -138,6 +141,7 @@ def print_table(plain: dict, dtls: dict):
     print("=" * 65)
 
 def main():
+    # === Benchmark CLI / report writer ===
     parser = argparse.ArgumentParser(description="Benchmark Plain vs DTLS CoAP")
     parser.add_argument("--requests", type=int, default=30, help="Number of benchmark requests")
     args = parser.parse_args()

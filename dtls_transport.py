@@ -16,6 +16,9 @@ from aiocoap import Message
 
 log = logging.getLogger("dtls-transport")
 
+# === DTLS transport module ===
+# This file bridges raw UDP datagrams and aiocoap's binary Message objects. It
+# authenticates peers before `server.py` receives the request and its identity.
 def _fix_windows_udp_socket(sock: socket.socket):
     """Disables WSAECONNRESET on Windows UDP sockets when ICMP port-unreachable is received."""
     if hasattr(socket, "SIO_UDP_CONNRESET"):
@@ -138,6 +141,9 @@ class DTLSClient:
         }
         start_time = time.perf_counter()
 
+        # === Secure client request flow ===
+        # Build the DTLS context, complete mutual authentication, then place the
+        # encoded CoAP datagram inside the encrypted DTLS channel.
         ctx = create_dtls_client_context(
             self.cert_path, self.key_path, self.ca_path, self.verify_server
         )
@@ -250,6 +256,8 @@ class DTLSServer:
 
     def _server_loop(self):
         """Routes incoming datagrams to the appropriate client session bridge."""
+        # The public UDP socket stays bound to the gateway port.  Each peer gets
+        # a local bridge pair so OpenSSL can process that peer's DTLS session.
         while self.running:
             try:
                 data, client_addr = self._server_sock.recvfrom(4096)
@@ -319,7 +327,9 @@ class DTLSServer:
         t_out.start()
 
         try:
-            # Perform DTLS server handshake handling WantRead / WantWrite
+            # === Secure server request flow ===
+            # Complete certificate verification, extract the authenticated CN,
+            # dispatch exactly one decrypted CoAP request, then return its reply.
             _do_handshake_loop(ssl_conn, timeout=3.5)
             peer_cn = extract_peer_identity(ssl_conn)
             log.info("Secure DTLS session established with peer: %s", peer_cn)

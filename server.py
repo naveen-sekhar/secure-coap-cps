@@ -27,7 +27,9 @@ from security import (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("cps-gateway")
 
-# Global CPS state
+# === Gateway state module ===
+# This is a simulation of sensor and actuator state; real hardware integration
+# would replace these in-memory values with device-specific adapters.
 STATE = {
     "soil_moisture": 24.5,
     "temperature": 29.2,
@@ -45,6 +47,9 @@ def payload_json(data: dict) -> bytes:
 
 def process_coap_dispatch(req: Message, peer_identity: str, is_dtls: bool, path_override: str = None) -> Message:
     """Core dispatch logic shared between Plain and DTLS transports."""
+    # === Gateway routing / control-flow module ===
+    # Both transports arrive here.  For DTLS, peer_identity is the verified
+    # certificate CN; plain CoAP intentionally has no authenticated identity.
     if is_dtls:
         STATE["dtls_requests"] += 1
     else:
@@ -81,7 +86,7 @@ def process_coap_dispatch(req: Message, peer_identity: str, is_dtls: bool, path_
             "security_mode": "DTLS 1.2" if is_dtls else "Plain CoAP (Insecure)"
         }))
 
-    # 3. /sensor/reading (POST telemetry upload)
+    # 3. Telemetry authorization module: /sensor/reading (POST)
     if path == "/sensor/reading":
         if method_code != 2:  # POST
             return Message(code=METHOD_NOT_ALLOWED, payload=b"Method Not Allowed")
@@ -125,7 +130,7 @@ def process_coap_dispatch(req: Message, peer_identity: str, is_dtls: bool, path_
             "security_metrics": metrics
         }))
 
-    # 5. /actuator/pump (GET / POST)
+    # 5. Actuator-control module: /actuator/pump (GET / POST)
     if path == "/actuator/pump":
         if method_code == 1:  # GET
             return Message(code=CONTENT, payload=payload_json({
@@ -144,20 +149,20 @@ def process_coap_dispatch(req: Message, peer_identity: str, is_dtls: bool, path_
                 log_security_event("MALFORMED_INPUT", peer_identity, "control_pump", str(e), False)
                 return Message(code=BAD_REQUEST, payload=b"Malformed JSON payload")
 
-            # RBAC Enforcement
+            # Security sequence: authorize the authenticated identity first...
             if not authorized(active_id, "control_pump"):
                 STATE["rbac_violations"] += 1
                 STATE["rejected_commands"] += 1
                 return Message(code=FORBIDDEN, payload=f"RBAC Forbidden: Role for '{active_id}' cannot command pump".encode())
 
-            # Application-level Replay Protection
+            # ...then reject a previously accepted command sequence...
             replay_cache = load_replay_state()
             if not accept_sequence(active_id, seq, replay_cache):
                 STATE["replays_detected"] += 1
                 STATE["rejected_commands"] += 1
                 return Message(code=FORBIDDEN, payload=b"Replay Attack Rejected: Stale or duplicate command sequence")
 
-            # Command Validation
+            # ...then validate and apply the permitted actuator command.
             if cmd not in ("PUMP_ON", "PUMP_OFF"):
                 STATE["rejected_commands"] += 1
                 return Message(code=BAD_REQUEST, payload=b"Unsupported command; use PUMP_ON or PUMP_OFF")
@@ -185,7 +190,8 @@ def process_coap_dispatch(req: Message, peer_identity: str, is_dtls: bool, path_
     return Message(code=BAD_REQUEST, payload=f"Resource {path} not found".encode())
 
 
-# ---------------- Plain CoAP Resource Adapters ----------------
+# === Plain CoAP adapter module ===
+# aiocoap calls these adapters; they forward into the same central dispatcher.
 
 class PlainResourceAdapter(resource.Resource):
     def __init__(self, path: str):
@@ -223,6 +229,7 @@ async def run_plain_coap_server(host: str = "127.0.0.1", port: int = 5683, ready
 
 def start_gateway(host: str = "127.0.0.1", plain_port: int = 5683, dtls_port: int = 5684):
     """Starts both Plain CoAP and Secure DTLS CoAP servers concurrently."""
+    # === Application composition / entry point ===
     ensure_credentials()
     ca_crt = os.path.join(CERTS_DIR, "ca.crt")
     gw_crt = os.path.join(CERTS_DIR, "gateway.crt")

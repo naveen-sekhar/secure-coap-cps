@@ -14,6 +14,9 @@ from cryptography.x509.oid import NameOID
 
 CERTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "certs")
 
+# === Certificate-generation module ===
+# The following helpers create lab credentials.  DTLS itself is performed by
+# OpenSSL in dtls_transport.py; this module only prepares its X.509 inputs.
 def _generate_rsa_key():
     return rsa.generate_private_key(
         public_exponent=65537,
@@ -36,6 +39,7 @@ def _save_cert_pem(cert, path):
         f.write(pem)
 
 def generate_ca(output_dir=CERTS_DIR, common_name="CPS-Root-CA"):
+    # A CA certificate is self-signed and is allowed to sign device certificates.
     os.makedirs(output_dir, exist_ok=True)
     ca_key = _generate_rsa_key()
     subject = issuer = x509.Name([
@@ -76,6 +80,7 @@ def generate_ca(output_dir=CERTS_DIR, common_name="CPS-Root-CA"):
     return cert_path, key_path, ca_cert, ca_key
 
 def generate_signed_cert(ca_cert, ca_key, common_name, filename_prefix, output_dir=CERTS_DIR):
+    # Device identity is carried in this certificate's Common Name (CN).
     os.makedirs(output_dir, exist_ok=True)
     device_key = _generate_rsa_key()
     subject = x509.Name([
@@ -103,6 +108,8 @@ def generate_signed_cert(ca_cert, ca_key, common_name, filename_prefix, output_d
 
 def ensure_credentials(certs_dir=CERTS_DIR):
     """Generate all lab certificates if they do not exist."""
+    # This is the public setup entry point used by the server, client, benchmark,
+    # and tests so each can run from a newly cloned project folder.
     os.makedirs(certs_dir, exist_ok=True)
     ca_crt_path = os.path.join(certs_dir, "ca.crt")
     ca_key_path = os.path.join(certs_dir, "ca.key")

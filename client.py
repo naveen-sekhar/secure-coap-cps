@@ -29,6 +29,9 @@ DEVICE_CREDS = {
     "rogue": (os.path.join(CERTS_DIR, "rogue", "rogue_device.crt"), os.path.join(CERTS_DIR, "rogue", "rogue_device.key"))
 }
 
+# === Client transport module ===
+# These two functions give the CLI one interface over the insecure baseline and
+# the certificate-authenticated DTLS path.
 async def execute_plain_coap(method, path: str, payload_data: dict = None, device_id: str = "controller-01"):
     """Sends a request via insecure Plain CoAP on port 5683."""
     protocol = await Context.create_client_context()
@@ -86,6 +89,9 @@ def _print_payload(payload_bytes: bytes):
         print(f"Payload: {payload_bytes.decode('utf-8', errors='replace')}")
 
 def main():
+    # === CLI command / demonstration module ===
+    # Argument parsing selects a normal device action or one of the security
+    # demonstrations below; it does not contain gateway authorization logic.
     parser = argparse.ArgumentParser(description="Secure CoAP CPS Client & Attack Demonstration")
     parser.add_argument("--mode", choices=["plain", "dtls"], default="dtls", help="Transport mode")
     parser.add_argument("--device", choices=["sensor", "controller", "rogue"], default="controller", help="Simulated device")
@@ -142,7 +148,7 @@ def main():
         else:
             execute_dtls_coap(POST, "/sensor/reading", data, device=args.device)
 
-    # 4. REPLAY ATTACK DEMONSTRATION
+    # 4. Replay-attack demonstration: repeat the same authenticated sequence.
     elif args.action == "replay-attack":
         fixed_seq = int(time.time() * 10)
         print(f"\n[DEMO] Initiating Application-Level Replay Attack with sequence={fixed_seq}...")
@@ -159,12 +165,13 @@ def main():
         else:
             execute_dtls_coap(POST, "/actuator/pump", cmd_data, device="controller")
 
-    # 5. ROGUE CERTIFICATE ATTACK DEMONSTRATION
+    # 5. Rogue-certificate demonstration: fail before application dispatch.
     elif args.action == "rogue-attack":
         print("\n[DEMO] Initiating Rogue Certificate Attack (untrusted CA certificate)...")
         execute_dtls_coap(GET, "/sensor/moisture", device="rogue")
 
-    # 6. PRIVILEGE ESCALATION ATTACK DEMONSTRATION
+    # 6. Privilege-escalation demonstration: a valid sensor is authenticated
+    # but still denied by the server's RBAC rule.
     elif args.action == "privilege-escalation":
         print("\n[DEMO] Initiating Privilege Escalation: Sensor device attempting to command Actuator pump...")
         seq = int(time.time() * 10)
